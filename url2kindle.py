@@ -4,10 +4,11 @@ import sys
 
 from urllib import parse, request
 
-CONFIG_FILE = os.path.join(os.getenv('XDG_CONFIG_HOME',
-                                     os.path.join(os.path.expanduser('~'), '.config')),
-                           'url2kindle', 'config')
-
+CONFIG_FILE = os.path.join(
+    os.getenv('XDG_CONFIG_HOME',
+              os.path.join(os.path.expanduser('~'), '.config')),
+    'url2kindle', 'config'
+)
 DOMAINS = {
     'free.kindle.com': 1,
     'kindle.com': 2,
@@ -17,27 +18,27 @@ DOMAINS = {
 }
 
 
-class BadURL(Exception): pass
-class InvalidEmailAddress(Exception): pass
+class ConfigError(Exception): pass  # noqa: E302, E701
+class URLError(Exception): pass  # noqa: E302, E701
 
 
 def read_config():
     """Read configuration file.
 
     :returns: name, domain tuple
-    :raises: InvalidEmailAddress
+    :raises: ConfigError
     """
     if os.path.isfile(CONFIG_FILE):
         with open(CONFIG_FILE, mode='r') as f:
             config = configparser.ConfigParser(default_section='url2kindle')
             config.read_file(f)
-        email = config.get('url2kindle', 'email')
         try:
+            email = config.get('url2kindle', 'email')
             name, domain = email.split('@')
             if domain not in DOMAINS:
                 raise ValueError
-        except ValueError:
-            raise InvalidEmailAddress
+        except (configparser.Error, ValueError):
+            raise ConfigError
 
         return (name, domain)
 
@@ -45,7 +46,7 @@ def read_config():
 def write_config(email):
     """Create new config file.
 
-    :email: Users Kindle email address
+    :email: User's Kindle email address
     """
     conf_dir = os.path.dirname(CONFIG_FILE)
     if not os.path.exists(conf_dir):
@@ -63,7 +64,7 @@ def send(url, name, domain_number):
     :name: local-part of email address
     :domain_number: numeric value representing domain of email address
 
-    :raises: BadURL
+    :raises: URLError
     """
     assert domain_number in range(1, 6)
 
@@ -79,45 +80,47 @@ def send(url, name, domain_number):
     req = request.Request(service_url, data=data, headers=headers)
     resp = request.urlopen(req)
     if resp.getheader('X-PushToKindle-Failed') == '2':
-        raise BadURL()
+        raise URLError
 
 
 def main():
+    def fail(*args, code=1):
+        print(*args, file=sys.stderr)
+        sys.exit(code)
+
     if len(sys.argv) != 2:
-        print("usage: u2k URL", file=sys.stderr)
-        sys.exit(1)
+        fail("usage: u2k URL")
 
     try:
         config = read_config()
-    except (configparser.NoOptionError, InvalidEmailAddress):
-        print("Error: Config file is corrupted!", file=sys.stderr)
-        sys.exit(1)
+    except ConfigError:
+        fail("Error: Config file is corrupted!", code=2)
 
-    if config is not None:
+    if config:
         name, domain = config
     else:
         try:
             email = input("Kindle email: ")
+            if '@' not in email:
+                fail("Error: Invalid email address!")
+            name, domain = email.split('@')
+            if domain not in DOMAINS:
+                domain_list_str = ', '.join('@' + d for d in DOMAINS)
+                fail("Error: Email domain must be one of:", domain_list_str)
         except KeyboardInterrupt:
-            print()
-            sys.exit(1)
-        if '@' not in email:
-            print("Error: Invalid email address!", file=sys.stderr)
-            sys.exit(1)
-        name, domain = email.split('@')
-        if domain not in DOMAINS:
-            domain_list_str = ', '.join('@' + d for d in DOMAINS)
-            print("Error: Email domain must be one of:", domain_list_str, file=sys.stderr)
-            sys.exit(1)
+            fail()
+
         write_config(email)
+        print("Created config file: {}".format(CONFIG_FILE))
 
     url = sys.argv[1]
+    dnumber = DOMAINS[domain]
     try:
-        dnumber = DOMAINS[domain]
         send(url, name, dnumber)
-    except BadURL:
-        print("Error: Bad URL!", file=sys.stderr)
-        sys.exit(1)
+    except URLError:
+        fail("Error: 404 URL not found!")
+    except KeyboardInterrupt:
+        fail()
 
 
 if __name__ == "__main__":
