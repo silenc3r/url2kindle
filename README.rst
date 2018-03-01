@@ -25,6 +25,8 @@ Usage
 
 First add ``kindle@fivefilters.org`` address to your Amazon approved list. Detailed instructions how to do that can be found `here <http://help.fivefilters.org/customer/portal/articles/178337-kindle-e-mail-address>`_.
 
+To send article to Kindle run:
+
 .. code-block:: shell
 
     $ u2k http://example.com/article.html
