@@ -51,7 +51,7 @@ def write_config(email):
     """
     conf_dir = os.path.dirname(CONFIG_FILE)
     if not os.path.exists(conf_dir):
-        os.mkdir(conf_dir)
+        os.makedirs(conf_dir)
     config = configparser.ConfigParser(default_section='url2kindle')
     config['url2kindle'] = {'email': email}
     with open(CONFIG_FILE, mode='w') as f:
