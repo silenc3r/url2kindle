@@ -19,6 +19,7 @@ DOMAINS = {
 
 
 class ConfigError(Exception): pass  # noqa: E302, E701
+class UnknownError(Exception): pass  # noqa: E302, E701
 class URLError(Exception): pass  # noqa: E302, E701
 
 
@@ -79,8 +80,11 @@ def send(url, name, domain_number):
 
     req = request.Request(service_url, data=data, headers=headers)
     resp = request.urlopen(req)
-    if resp.getheader('X-PushToKindle-Failed') == '2':
+    error_code = resp.getheader('X-PushToKindle-Failed')
+    if error_code == '2':
         raise URLError
+    elif error_code:
+        raise UnknownError(error_code)
 
 
 def main():
@@ -119,6 +123,8 @@ def main():
         send(url, name, dnumber)
     except URLError:
         fail("Error: 404 URL not found!")
+    except UnknownError as e:
+        fail("Error:", "[{}]".format(e), "Something went wrong...")
     except KeyboardInterrupt:
         fail()
 
