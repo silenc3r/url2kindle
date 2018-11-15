@@ -65,11 +65,11 @@ def send(url, name, domain_number):
     :name: local-part of email address
     :domain_number: numeric value representing domain of email address
 
-    :raises: URLError
+    :raises: UnknownError, URLError
     """
     assert domain_number in range(1, 6)
 
-    service_url = 'http://fivefilters.org/kindle-it/send.php'
+    service_url = 'https://pushtokindle.fivefilters.org/send.php'
     headers = {'User-Agent': 'url2kindle https://github.com/silenc3r/url2kindle'}
     data = parse.urlencode({
         'context': 'send',
