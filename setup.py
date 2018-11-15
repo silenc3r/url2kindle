@@ -13,11 +13,11 @@ from setuptools import setup, Command
 
 # Package meta-data.
 NAME = 'url2kindle'
-DESCRIPTION = 'Send web articles to your Kindle'
+DESCRIPTION = 'Send web articles to your Kindle from terminal'
 URL = 'https://github.com/silenc3r/url2kindle'
 EMAIL = 'dawid.zych@yandex.com'
 AUTHOR = 'Dawid Zych'
-VERSION = '0.1'
+VERSION = '0.2'
 
 # What packages are required for this module to be executed?
 REQUIRED = []
