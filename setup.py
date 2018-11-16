@@ -11,13 +11,15 @@ from shutil import rmtree
 
 from setuptools import setup, Command
 
+from url2kindle import __VERSION__
+
 # Package meta-data.
 NAME = 'url2kindle'
 DESCRIPTION = 'Send web articles to your Kindle from terminal'
 URL = 'https://github.com/silenc3r/url2kindle'
 EMAIL = 'dawid.zych@yandex.com'
 AUTHOR = 'Dawid Zych'
-VERSION = '0.2'
+VERSION = __VERSION__
 
 # What packages are required for this module to be executed?
 REQUIRED = []

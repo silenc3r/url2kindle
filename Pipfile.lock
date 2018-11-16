@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "411ddd2d0d0090b99de6547d4e21fb9c2126f6a15dc81cf6773725e1337c7806"
+            "sha256": "7a2ca2a3099a2120e457f42f8128b14b10161554706872769c9ba527f4fdb2aa"
         },
         "pipfile-spec": 6,
         "requires": {},
@@ -16,6 +16,9 @@
     "default": {
         "e1839a8": {
             "editable": true,
+            "extras": [
+                "dev"
+            ],
             "path": "."
         }
     },
@@ -58,6 +61,9 @@
         },
         "e1839a8": {
             "editable": true,
+            "extras": [
+                "dev"
+            ],
             "path": "."
         },
         "idna": {
