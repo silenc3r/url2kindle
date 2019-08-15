@@ -4,25 +4,26 @@ import sys
 
 from urllib import parse, request
 
-__VERSION__ = '0.3'
+__VERSION__ = "0.3"
 
 CONFIG_FILE = os.path.join(
-    os.getenv('XDG_CONFIG_HOME',
-              os.path.join(os.path.expanduser('~'), '.config')),
-    'url2kindle', 'config'
+    os.getenv("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")),
+    "url2kindle",
+    "config",
 )
 DOMAINS = {
-    'free.kindle.com': 1,
-    'kindle.com': 2,
-    'iduokan.com': 3,
-    'kindle.cn': 4,
-    'pbsync.com': 5,
+    "free.kindle.com": 1,
+    "kindle.com": 2,
+    "iduokan.com": 3,
+    "kindle.cn": 4,
+    "pbsync.com": 5,
 }
 
-
+# fmt: off
 class ConfigError(Exception): pass  # noqa: E302, E701
 class UnknownError(Exception): pass  # noqa: E302, E701
 class URLError(Exception): pass  # noqa: E302, E701
+# fmt: on
 
 
 def read_config():
@@ -32,12 +33,12 @@ def read_config():
     :raises: ConfigError
     """
     if os.path.isfile(CONFIG_FILE):
-        with open(CONFIG_FILE, mode='r') as f:
-            config = configparser.ConfigParser(default_section='url2kindle')
+        with open(CONFIG_FILE, mode="r") as f:
+            config = configparser.ConfigParser(default_section="url2kindle")
             config.read_file(f)
         try:
-            email = config.get('url2kindle', 'email')
-            name, domain = email.split('@')
+            email = config.get("url2kindle", "email")
+            name, domain = email.split("@")
             if domain not in DOMAINS:
                 raise ValueError
         except (configparser.Error, ValueError):
@@ -54,9 +55,9 @@ def write_config(email):
     conf_dir = os.path.dirname(CONFIG_FILE)
     if not os.path.exists(conf_dir):
         os.makedirs(conf_dir)
-    config = configparser.ConfigParser(default_section='url2kindle')
-    config['url2kindle'] = {'email': email}
-    with open(CONFIG_FILE, mode='w') as f:
+    config = configparser.ConfigParser(default_section="url2kindle")
+    config["url2kindle"] = {"email": email}
+    with open(CONFIG_FILE, mode="w") as f:
         config.write(f)
 
 
@@ -71,19 +72,16 @@ def send(url, name, domain_number):
     """
     assert domain_number in range(1, 6)
 
-    service_url = 'https://pushtokindle.fivefilters.org/send.php'
-    headers = {'User-Agent': 'url2kindle https://github.com/silenc3r/url2kindle'}
-    data = parse.urlencode({
-        'context': 'send',
-        'email': name,
-        'domain': domain_number,
-        'url': url,
-    }).encode()
+    service_url = "https://pushtokindle.fivefilters.org/send.php"
+    headers = {"User-Agent": "url2kindle https://github.com/silenc3r/url2kindle"}
+    data = parse.urlencode(
+        {"context": "send", "email": name, "domain": domain_number, "url": url}
+    ).encode()
 
     req = request.Request(service_url, data=data, headers=headers)
     resp = request.urlopen(req)
-    error_code = resp.getheader('X-PushToKindle-Failed')
-    if error_code == '2':
+    error_code = resp.getheader("X-PushToKindle-Failed")
+    if error_code == "2":
         raise URLError
     elif error_code:
         raise UnknownError(error_code)
@@ -111,11 +109,11 @@ def main():
     else:
         try:
             email = input("Kindle email: ")
-            if '@' not in email:
+            if "@" not in email:
                 fail("Error: Invalid email address!")
-            name, domain = email.split('@')
+            name, domain = email.split("@")
             if domain not in DOMAINS:
-                domain_list_str = ', '.join('@' + d for d in DOMAINS)
+                domain_list_str = ", ".join("@" + d for d in DOMAINS)
                 fail("Error: Email domain must be one of:", domain_list_str)
         except KeyboardInterrupt:
             fail()
