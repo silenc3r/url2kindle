@@ -4,9 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-"e1839a8" = {path = ".", extras = ["dev"], editable = true}
+url2kindle = {editable = true,path = "."}
 
 [dev-packages]
-"e1839a8" = {path = ".", editable = true}
 twine = "*"
 pylint = "*"
+flake8 = "*"
+black = "*"
+
+[pipenv]
+allow_prereleases = true
