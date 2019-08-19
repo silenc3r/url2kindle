@@ -4,7 +4,7 @@ import sys
 
 from urllib import parse, request
 
-__VERSION__ = "0.3"
+__VERSION__ = "0.4"
 
 CONFIG_FILE = os.path.join(
     os.getenv("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")),
