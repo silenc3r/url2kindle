@@ -11,7 +11,7 @@ Installation
 
 .. code-block:: shell
 
-    $ pipsi install url2kindle
+    $ pipx install url2kindle
 
 or
 
@@ -23,7 +23,8 @@ or
 Usage
 =====
 
-First add ``kindle@fivefilters.org`` address to your Amazon approved list. Detailed instructions how to do that can be found `here <http://help.fivefilters.org/customer/portal/articles/178337-kindle-e-mail-address>`_.
+First you need to configure your Amazon accout. Detailed instructions how to do that can be found
+`here <http://help.fivefilters.org/customer/portal/articles/178337-kindle-e-mail-address>`_.
 
 To send article to Kindle run:
 
@@ -31,10 +32,6 @@ To send article to Kindle run:
 
     $ u2k http://example.com/article.html
 
-On a first run url2kindle will ask for your Kindle email address and save it in configuration file.
-
-
-Limitations
-===========
-
-Presently url2kindle doesn't support custom 'Send from' email addresses.
+On first run ``url2kindle`` will ask for your Kindle email address and 'send from' address.
+If you leave 'send from' field blank it will default to ``kindle@fivefilters.org``.
+Both addresses will be saved in configuration file.
