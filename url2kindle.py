@@ -200,7 +200,7 @@ def get_parser():
     parser.add_argument(
         "--version", action="version", version=f"url2kindle {__VERSION__}"
     )
-    parser.add_argument("url", nargs=1, help="URL to send")
+    parser.add_argument("url", help="URL to send")
     parser.add_argument(
         "-t", "--title", metavar="TITLE", help="set custom title for article"
     )
