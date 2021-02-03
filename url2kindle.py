@@ -10,7 +10,7 @@ import time
 
 import requests
 
-__VERSION__ = "0.5.1"
+__VERSION__ = "0.6"
 
 CONFIG_FILE = os.path.join(
     os.getenv("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")),
