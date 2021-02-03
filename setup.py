@@ -22,7 +22,7 @@ AUTHOR = "Dawid Zych"
 VERSION = __VERSION__
 
 # What packages are required for this module to be executed?
-REQUIRED = []
+REQUIRED = ["requests"]
 
 # The rest you shouldn't have to touch too much :)
 # ------------------------------------------------

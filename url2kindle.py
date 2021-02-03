@@ -4,10 +4,11 @@ import hashlib
 import multiprocessing
 import os
 import pathlib
+import re
 import sys
 import time
-import urllib
-from urllib import parse, request
+
+import requests
 
 __VERSION__ = "0.5.1"
 
@@ -20,26 +21,28 @@ DATA_DIR = os.path.join(
     os.getenv("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local/share")),
     "url2kindle",
 )
-DOMAINS = {
-    "free.kindle.com": 1,
-    "kindle.com": 2,
-    "iduokan.com": 3,
-    "kindle.cn": 4,
-    "pbsync.com": 5,
-}
 SERVICE_URL = "https://pushtokindle.fivefilters.org/send.php"
 
-# fmt: off
-class ConfigError(Exception): pass  # noqa: E302, E701
-class UnknownError(Exception): pass  # noqa: E302, E701
-class URLError(Exception): pass  # noqa: E302, E701
-# fmt: on
+KINDLE_REGEX = re.compile(r"[^@]+@kindle.com$")
+EMAIL_REGEX = re.compile(r"[^@]+@[^@]+\.[^@]+")
+
+
+class ConfigError(Exception):
+    pass
+
+
+class TooManyTries(Exception):
+    pass
+
+
+class URLError(Exception):
+    pass
 
 
 def read_config():
     """Read configuration file.
 
-    :returns: (name, domain, send_from) tuple or None
+    :returns: (email, send_from) tuple or None
     :raises: ConfigError
     """
     if not os.path.isfile(CONFIG_FILE):
@@ -51,18 +54,12 @@ def read_config():
 
     try:
         email = config.get("url2kindle", "email")
-    except configparser.Error:
-        raise ConfigError("No email address found in configuration file")
-
-    try:
-        name, domain = email.split("@")
-        domain_number = DOMAINS[domain]
-    except (KeyError, ValueError):
-        raise ConfigError(f"Invalid Kindle email address '{email}'")
+    except configparser.Error as e:
+        raise ConfigError("Kindle email address not found in configuration file") from e
 
     send_from = config.get("url2kindle", "from", fallback=None)
 
-    return (name, domain_number, send_from)
+    return (email, send_from)
 
 
 def save_config(email, send_from=None):
@@ -84,58 +81,64 @@ def save_config(email, send_from=None):
         config.write(f)
 
 
-def _prepare_payload(url, name, domain_number, send_from=None, title=None):
-    assert domain_number in range(1, 6)
+def validate_config(cfg):
+    email, send_from = cfg
+    if not KINDLE_REGEX.fullmatch(email):
+        raise ConfigError(f"Invalid Kindle email address: {email}")
+    if not EMAIL_REGEX.fullmatch(send_from):
+        default_send_from = "kindle@fivefilters.org"
+        print(
+            f"Invalid 'from' email address: {send_from}",
+            "\nFalling back to default: {default_send_from}",
+            file=sys.stderr,
+        )
+        send_from = default_send_from
 
-    send_from = send_from or ""
-    title = title or ""
-
-    # original Firefox addon includes context and url parameters in
-    # request url, but we'll put them in payload
-    payload = parse.urlencode(
-        {
-            "context": "send",
-            "email": name,
-            "domain": domain_number,
-            "from": send_from,
-            "title": title,
-            "url": url,
-        }
-    ).encode()
-    return payload
+    return email, send_from
 
 
-def send(payload):
-    """Send URL to Kindle.
+def send(url, email, send_from, title):
+    """Send URL to Kindle."""
 
-    :payload: data to send
+    # pylint: disable=line-too-long
+    # headers = {"User-Agent": "url2kindle https://github.com/silenc3r/url2kindle"}
+    headers = {
+        "user-agent": "Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:85.0) Gecko/20100101 Firefox/85.0",
+        "host": "pushtokindle.fivefilters.org",
+        "origin": "https://pushtokindle.fivefilters.org",
+        "referer": "https://www.fivefilters.org/push-to-kindle/",
+    }
+    request_url = SERVICE_URL + "?context=send" + "&url=" + url
+    payload = {"email": email, "from": send_from, "title": title}
 
-    :raises: UnknownError, URLError, urllib.error.URLError
-    """
-    headers = {"User-Agent": "url2kindle https://github.com/silenc3r/url2kindle"}
+    r = requests.post(request_url, data=payload, headers=headers)
 
-    req = request.Request(SERVICE_URL, data=payload, headers=headers)
-    resp = request.urlopen(req)
-    error_code = resp.getheader("X-PushToKindle-Failed")
-    if error_code == "2":
-        raise URLError("404 - URL not found!")
-    elif error_code:
-        raise UnknownError(error_code)
+    if "X-PushToKindle-Failed" in r.headers:
+        error_code = r.headers["X-PushToKindle-Failed"]
+        if error_code == "1":
+            raise URLError("Invalid email address")
+        if error_code == "2":
+            raise URLError("404 - URL not found!")
+        error_msg = f"X-PushToKindle-Failed: {error_code}" + "\n" + r.text
+        raise URLError(error_msg)
+    if r.content == b"Invalid URL supplied":
+        raise URLError(r.content.decode("utf-8"))
 
 
-def send_or_save(url, name, domain_number, send_from=None, title=None):
+def send_or_save(url, email, send_from="", title=""):
     url_hash = hashlib.blake2s(url.encode()).hexdigest()
     filename = pathlib.Path(DATA_DIR, url_hash)
     if filename.exists():
         filename.unlink()
 
-    payload = _prepare_payload(url, name, domain_number, send_from, title)
     try:
-        send(payload)
-    except (urllib.error.URLError, UnknownError):
-        payload_str = payload.decode("utf-8")
+        send(url, email, send_from, title)
+    except requests.exceptions.RequestException:
         with open(filename, "w") as f:
-            f.write(payload_str)
+            f.write(url)
+            f.write(email)
+            f.write(send_from)
+            f.write(title)
         raise
 
 
@@ -144,15 +147,18 @@ def _retry_sending(filename):
         return
 
     with open(filename, "r") as f:
-        payload_str = f.read().rstrip()
+        text = f.readlines()
+        url = text[0].rstrip()
+        email = text[1].rstrip()
+        send_from = text[2].rstrip()
+        title = text[3].rstrip()
 
-    payload = payload_str.encode()
     try:
-        send(payload)
+        send(url, email, send_from, title)
         filename.unlink()
     except URLError:
         filename.unlink()
-    except urllib.error.URLError:
+    except requests.exceptions.RequestException:
         pass
 
 
@@ -167,8 +173,7 @@ def retry_saved():
     if lockfile.exists():
         if (now - lockfile.stat().st_mtime) < 600:
             return
-        else:
-            lockfile.unlink()
+        lockfile.unlink()
 
     lockfile.touch(exist_ok=True)
     five_mins_ago = now - 300
@@ -207,72 +212,69 @@ def get_parser():
     return parser
 
 
-def main():
-    def err(*args):
-        print("ERROR:", *args, file=sys.stderr)
+def prompt_for_credentials():
+    tries = 3
+    while tries > 0:
+        email = input("Kindle email: ").strip()
+        if KINDLE_REGEX.fullmatch(email):
+            break
+        print(f"Invalid Kindle email address: {email}", file=sys.stderr)
+        email = ""
+        tries -= 1
+    if email == "":
+        print("Too many tries", file=sys.stderr)
+        raise TooManyTries
 
+    default_send_from = "kindle@fivefilters.org"
+    tries = 3
+    while tries > 0:
+        send_from = input("Send from: ").strip()
+        if EMAIL_REGEX.fullmatch(send_from):
+            break
+        print(f"Invalid 'from' email address: {send_from}", file=sys.stderr)
+        send_from = ""
+        tries -= 1
+    if send_from == "":
+        print(f"Too many tries. Using default: {default_send_from}")
+        send_from = default_send_from
+
+    return email, send_from
+
+
+def main():
     parser = get_parser()
     args = parser.parse_args()
 
     url = args.url
-    title = args.title
+    title = args.title or ""
 
-    try:
-        config = read_config()
-    except ConfigError as e:
-        err(e)
-        return 2
-
+    config = read_config()
     if config:
-        name, dnumber, send_from = config
+        email, send_from = validate_config(config)
     else:
         try:
-            email = input("Kindle email: ")
-        except KeyboardInterrupt:
+            email, send_from = prompt_for_credentials()
+        except (KeyboardInterrupt, TooManyTries):
             return 1
 
-        if "@" not in email:
-            err("Invalid email address!")
-            return 1
-        name, domain = email.split("@")
-        if domain not in DOMAINS:
-            domain_list_str = ", ".join("@" + d for d in DOMAINS)
-            err("Email domain must be one of:", domain_list_str)
-            return 1
-        dnumber = DOMAINS[domain]
-
-        default_send_from = "kindle@fivefilters.org"
-        try:
-            send_from = input(f"Send from (default: {default_send_from}): ")
-        except KeyboardInterrupt:
-            return 1
-
-        send_from = send_from.strip() or default_send_from
         save_config(email, send_from)
-        print("Created config file '{}'".format(CONFIG_FILE))
+        print(f"Saved config file: {CONFIG_FILE}")
 
     if not os.path.isdir(DATA_DIR):
         os.makedirs(DATA_DIR)
 
-    return_code = 0
     try:
-        send_or_save(url, name, dnumber, send_from, title)
+        send_or_save(url, email, send_from, title)
     except KeyboardInterrupt:
         return 1
     except URLError as e:
-        err(e)
-        return_code = 1
-    except UnknownError as e:
-        err("[{}]".format(e), "Something went wrong...")
-        return_code = 1
-    except urllib.error.URLError as e:
-        err(e.args[0])
-        return_code = 1
+        print("Error: ", e, file=sys.stderr)
+        return 1
 
     retry_saved()
-
-    return return_code
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    code = main()
+    sys.exit(code)
