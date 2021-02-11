@@ -12,7 +12,7 @@ import time
 
 import requests
 
-__VERSION__ = "0.6.1"
+__VERSION__ = "0.7"
 
 DEBUG = os.getenv("U2K_DEBUG")
 
