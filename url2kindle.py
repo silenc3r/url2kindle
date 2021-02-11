@@ -1,6 +1,8 @@
 import argparse
 import configparser
 import hashlib
+import logging
+import logging.config
 import multiprocessing
 import os
 import pathlib
@@ -10,7 +12,9 @@ import time
 
 import requests
 
-__VERSION__ = "0.6"
+__VERSION__ = "0.6.1"
+
+DEBUG = os.getenv("U2K_DEBUG")
 
 CONFIG_FILE = os.path.join(
     os.getenv("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")),
@@ -21,10 +25,76 @@ DATA_DIR = os.path.join(
     os.getenv("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local/share")),
     "url2kindle",
 )
+CACHE_DIR = os.path.join(
+    os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")),
+    "url2kindle",
+)
 SERVICE_URL = "https://pushtokindle.fivefilters.org/send.php"
+DEFAULT_SENDER = "kindle@fivefilters.org"
 
 KINDLE_REGEX = re.compile(r"[^@]+@kindle.com$")
 EMAIL_REGEX = re.compile(r"[^@]+@[^@]+\.[^@]+")
+
+
+class Logger:
+    """
+    Logger class.
+    """
+
+    FORMAT = "[%(levelname)-s] %(name)s %(asctime)s %(message)s"
+    DATE = "%Y-%m-%d %H:%M:%S"
+    __log = None
+    APP = "url2kindle"
+    LOG_FILE = os.path.join(CACHE_DIR, "u2k.log")
+
+    @staticmethod
+    def get_default():
+        """
+        Return default instance of Logger
+        @return Logger
+        """
+        if Logger.__log is None:
+            if not os.path.isdir(CACHE_DIR):
+                os.makedirs(CACHE_DIR)
+
+            logger = logging.getLogger(Logger.APP)
+
+            fh = logging.handlers.RotatingFileHandler(
+                Logger.LOG_FILE, maxBytes=1048576, backupCount=3
+            )
+            fh.setLevel(logging.DEBUG if DEBUG else logging.INFO)
+            verbose_formatter = logging.Formatter(Logger.FORMAT, Logger.DATE)
+            fh.setFormatter(verbose_formatter)
+            ch = logging.StreamHandler()
+            ch.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
+            simple_formatter = logging.Formatter("%(message)s")
+            ch.setFormatter(simple_formatter)
+            logger.addHandler(fh)
+            logger.addHandler(ch)
+            logger.setLevel(logging.DEBUG)
+
+            Logger.__log = logging.getLogger(Logger.APP)
+        return Logger.__log
+
+    @staticmethod
+    def warning(msg, *args):
+        Logger.get_default().warning(msg, *args)
+
+    @staticmethod
+    def debug(msg, *args):
+        if DEBUG:
+            Logger.get_default().debug(msg, *args)
+
+    @staticmethod
+    def info(msg, *args):
+        Logger.get_default().info(msg, *args)
+
+    @staticmethod
+    def error(msg, *args):
+        Logger.get_default().error(msg, *args)
+
+
+logger = Logger
 
 
 class ConfigError(Exception):
@@ -79,6 +149,12 @@ def save_config(email, send_from=None):
 
     with open(CONFIG_FILE, mode="w") as f:
         config.write(f)
+        logger.info(
+            "Saved config file: '%s' with email:'%s', from:'%s'",
+            CONFIG_FILE,
+            email,
+            send_from,
+        )
 
 
 def validate_config(cfg):
@@ -86,13 +162,12 @@ def validate_config(cfg):
     if not KINDLE_REGEX.fullmatch(email):
         raise ConfigError(f"Invalid Kindle email address: {email}")
     if not EMAIL_REGEX.fullmatch(send_from):
-        default_send_from = "kindle@fivefilters.org"
-        print(
-            f"Invalid 'from' email address: {send_from}",
-            "\nFalling back to default: {default_send_from}",
-            file=sys.stderr,
+        logger.warning(
+            "Invalid 'from' email address: %s\nFalling back to default: %s",
+            send_from,
+            DEFAULT_SENDER,
         )
-        send_from = default_send_from
+        send_from = DEFAULT_SENDER
 
     return email, send_from
 
@@ -111,6 +186,13 @@ def send(url, email, send_from, title):
     request_url = SERVICE_URL + "?context=send" + "&url=" + url
     payload = {"email": email, "from": send_from, "title": title}
 
+    logger.info(
+        "Sending url:'%s', email:'%s', from:'%s', title:'%s'",
+        url,
+        email,
+        send_from,
+        title,
+    )
     r = requests.post(request_url, data=payload, headers=headers)
 
     if "X-PushToKindle-Failed" in r.headers:
@@ -126,14 +208,12 @@ def send(url, email, send_from, title):
 
 
 def send_or_save(url, email, send_from="", title=""):
-    url_hash = hashlib.blake2s(url.encode()).hexdigest()
-    filename = pathlib.Path(DATA_DIR, url_hash)
-    if filename.exists():
-        filename.unlink()
-
     try:
         send(url, email, send_from, title)
     except requests.exceptions.RequestException:
+        logger.warning("Network error. Saving url for resend later: '%s'", url)
+        url_hash = hashlib.blake2s(url.encode()).hexdigest()
+        filename = pathlib.Path(DATA_DIR, url_hash)
         with open(filename, "w") as f:
             f.write(url)
             f.write(email)
@@ -154,9 +234,16 @@ def _retry_sending(filename):
         title = text[3].rstrip()
 
     try:
+        logger.info(
+            "Retrying sending url:'%s' email:'%s' from:'%s' title:'%s'",
+            url,
+            email,
+            send_from,
+            title,
+        )
         send(url, email, send_from, title)
-        filename.unlink()
     except URLError:
+        logger.info("Failed to resend - wrong url: '%s'", url)
         filename.unlink()
     except requests.exceptions.RequestException:
         pass
@@ -172,22 +259,13 @@ def retry_saved():
     lockfile = pathlib.Path(DATA_DIR, "LOCK")
     if lockfile.exists():
         if (now - lockfile.stat().st_mtime) < 600:
+            logger.debug("Lockfile is fresh, aborting")
             return
         lockfile.unlink()
 
+    logger.debug("Creating lockfile")
     lockfile.touch(exist_ok=True)
-    five_mins_ago = now - 300
-    one_month_ago = now - 60 * 60 * 24 * 30
-    files = []
-    for filename in pathlib.Path(DATA_DIR).glob("*"):
-        mod_time = filename.stat().st_mtime
-        if mod_time < one_month_ago:
-            filename.unlink()
-        elif mod_time < five_mins_ago:
-            files.append(filename)
-
-    # lockfile.unlink()
-
+    files = filter(lambda p: not p.match("LOCK"), pathlib.Path(DATA_DIR).glob("*"))
     procs = []
     for filename in files:
         p = multiprocessing.Process(target=_retry_sending, args=(filename,))
@@ -222,10 +300,8 @@ def prompt_for_credentials():
         email = ""
         tries -= 1
     if email == "":
-        print("Too many tries", file=sys.stderr)
         raise TooManyTries
 
-    default_send_from = "kindle@fivefilters.org"
     tries = 3
     while tries > 0:
         send_from = input("Send from: ").strip()
@@ -235,10 +311,19 @@ def prompt_for_credentials():
         send_from = ""
         tries -= 1
     if send_from == "":
-        print(f"Too many tries. Using default: {default_send_from}")
-        send_from = default_send_from
+        print(f"Too many tries. Using default: {DEFAULT_SENDER}")
+        send_from = DEFAULT_SENDER
 
     return email, send_from
+
+
+def _fix_send_from_bug(sender):
+    if sender != DEFAULT_SENDER:
+        logger.warning(
+            "Custom 'from' addresses are currently bugged, falling back to default: '%s'",
+            DEFAULT_SENDER,
+        )
+    return DEFAULT_SENDER
 
 
 def main():
@@ -248,17 +333,27 @@ def main():
     url = args.url
     title = args.title or ""
 
-    config = read_config()
+    try:
+        config = read_config()
+    except ConfigError as e:
+        logger.error(e)
+        return 1
+
     if config:
         email, send_from = validate_config(config)
+        logger.debug("Config: email:'%s', from:'%s'", email, send_from)
     else:
         try:
             email, send_from = prompt_for_credentials()
-        except (KeyboardInterrupt, TooManyTries):
+        except KeyboardInterrupt:
+            return 1
+        except TooManyTries:
+            logger.error("Too many tries")
             return 1
 
         save_config(email, send_from)
-        print(f"Saved config file: {CONFIG_FILE}")
+
+    send_from = _fix_send_from_bug(send_from)
 
     if not os.path.isdir(DATA_DIR):
         os.makedirs(DATA_DIR)
@@ -268,7 +363,7 @@ def main():
     except KeyboardInterrupt:
         return 1
     except URLError as e:
-        print("Error: ", e, file=sys.stderr)
+        logger.error(e)
         return 1
 
     retry_saved()
@@ -276,5 +371,4 @@ def main():
 
 
 if __name__ == "__main__":
-    code = main()
-    sys.exit(code)
+    sys.exit(main())
