@@ -94,7 +94,7 @@ class Logger:
         Logger.get_default().error(msg, *args)
 
 
-logger = Logger
+logger = Logger()
 
 
 class ConfigError(Exception):
@@ -259,15 +259,25 @@ def retry_saved():
     lockfile = pathlib.Path(DATA_DIR, "LOCK")
     if lockfile.exists():
         if (now - lockfile.stat().st_mtime) < 600:
-            logger.debug("Lockfile is fresh, aborting")
+            logger.debug("Lockfile recently created, aborting")
             return
         lockfile.unlink()
 
     logger.debug("Creating lockfile")
     lockfile.touch(exist_ok=True)
     files = filter(lambda p: not p.match("LOCK"), pathlib.Path(DATA_DIR).glob("*"))
+    five_mins_ago = now - 300
+    one_month_ago = now - 60 * 60 * 24 * 30
     procs = []
     for filename in files:
+        mod_time = filename.stat().st_mtime
+        if mod_time < one_month_ago:
+            logger.debug("Skipping retrying, file too old: %s", filename)
+            filename.unlink()
+            continue
+        if mod_time > five_mins_ago:
+            logger.debug("Skipping retrying, file recently created: %s", filename)
+            continue
         p = multiprocessing.Process(target=_retry_sending, args=(filename,))
         procs.append(p)
         p.start()
