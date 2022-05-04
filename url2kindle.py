@@ -3,6 +3,7 @@ import configparser
 import hashlib
 import logging
 import logging.config
+import logging.handlers
 import multiprocessing
 import os
 import pathlib
@@ -12,7 +13,7 @@ import time
 
 import requests
 
-__VERSION__ = "0.7"
+__VERSION__ = "0.8"
 
 DEBUG = os.getenv("U2K_DEBUG")
 
@@ -301,6 +302,7 @@ def get_parser():
 
 
 def prompt_for_credentials():
+    email, send_from = "", ""
     tries = 3
     while tries > 0:
         email = input("Kindle email: ").strip()

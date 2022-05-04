@@ -4,7 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-url2kindle = {editable = true,path = "."}
+url2kindle = {editable = true, path = "."}
 requests = "*"
 
 [dev-packages]
@@ -14,6 +14,3 @@ flake8 = "*"
 black = "*"
 pytest = "*"
 rope = "*"
-
-[pipenv]
-allow_prereleases = true
